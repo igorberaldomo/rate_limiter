@@ -13,14 +13,14 @@ import (
 )
 
 func main() {
-	r :=chi.NewRouter()
+	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Get("/", perClientLimiter(handler))
 	r.Get("/{API_KEY}", perTokenLimiter(handler))
-	
+
 	http.ListenAndServe(":8080", nil)
-	
+
 }
 
 type message struct {
@@ -36,15 +36,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func perClientLimiter(next func(writer http.ResponseWriter, request *http.Request)) http.Handler {
+func perClientLimiter(next http.HandlerFunc) http.HandlerFunc {
 
 	type client struct {
-		limiter *rate.Limiter
-		lastCalled    time.Time
+		limiter    *rate.Limiter
+		lastCalled time.Time
 	}
 
 	var (
-		mu   sync.Mutex
+		mu      sync.Mutex
 		clients = make(map[string]*client)
 	)
 
@@ -60,14 +60,14 @@ func perClientLimiter(next func(writer http.ResponseWriter, request *http.Reques
 			mu.Unlock()
 		}
 	}()
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		mu.Lock()
-		if _ , found :=clients[ip]; !found {
+		if _, found := clients[ip]; !found {
 			clients[ip] = &client{limiter: rate.NewLimiter(rate.Every(time.Second), 100)}
 		}
 		clients[ip].lastCalled = time.Now()
@@ -83,18 +83,18 @@ func perClientLimiter(next func(writer http.ResponseWriter, request *http.Reques
 		}
 		mu.Unlock()
 		next(w, r)
-	})
+	}
 }
 
-func perTokenLimiter(next func(writer http.ResponseWriter, request *http.Request)) http.Handler {
-	auth := chi.URLParam(next, "API_KEY")
+func perTokenLimiter(next http.HandlerFunc) http.HandlerFunc {
+	// auth := chi.URLParam(next, "API_KEY")
 	type token struct {
-		limiter *rate.Limiter
-		lastCalled    time.Time
+		limiter    *rate.Limiter
+		lastCalled time.Time
 	}
 
 	var (
-		mu   sync.Mutex
+		mu     sync.Mutex
 		tokens = make(map[string]*token)
 	)
 
@@ -110,11 +110,11 @@ func perTokenLimiter(next func(writer http.ResponseWriter, request *http.Request
 			mu.Unlock()
 		}
 	}()
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
+	return func(w http.ResponseWriter, r *http.Request) {
+		auth := chi.URLParam(r, "API_KEY")
 
 		mu.Lock()
-		if _ , found :=tokens[auth]; !found {
+		if _, found := tokens[auth]; !found {
 			tokens[auth] = &token{limiter: rate.NewLimiter(rate.Every(time.Second), 100)}
 		}
 		tokens[auth].lastCalled = time.Now()
@@ -130,5 +130,5 @@ func perTokenLimiter(next func(writer http.ResponseWriter, request *http.Request
 		}
 		mu.Unlock()
 		next(w, r)
-	})
+	}
 }
