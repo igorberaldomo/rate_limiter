@@ -68,13 +68,13 @@ func perClientLimiter(next http.HandlerFunc) http.HandlerFunc {
 		Password: "",
 		DB:       0,
 	})
-	pong, err := rdb.Ping().Result()
+	_, err := rdb.Ping().Result()
 	if err != nil {
 
 		slog.Error("perClientLimiter", "message", "error trying to connect to redis", "error", err)
 		return nil
 	}
-	slog.Info("redis.NewClient", "message", "Connected to redis", "pong", pong)
+	slog.Info("redis.NewClient", "message", "Connected to redis")
 
 	db := newRedisClient(rdb)
 
