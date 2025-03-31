@@ -1,0 +1,15 @@
+services:
+  redis:
+    container_name: redis
+    image: redis:latest
+    command: redis-server
+    ports:
+      - 6379:6379
+  server:
+    container_name: server
+    build:
+      context: .
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
