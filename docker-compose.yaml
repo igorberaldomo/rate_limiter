@@ -8,6 +8,7 @@ services:
   server:
     container_name: server
     build:
+      dockerfile: Dockerfile
       context: .
     depends_on:
       - redis
