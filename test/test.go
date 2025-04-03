@@ -8,12 +8,13 @@ import (
 	"time"
 )
 
-func init(){
-	bulkRequest := 1000
+
+func main() {
+	bulkRequest := 10
 
 	test("", bulkRequest)
 	test("token", bulkRequest)
-	
+
 }
 
 func test(AuthToken string, bulkRequest int) {
@@ -22,14 +23,15 @@ func test(AuthToken string, bulkRequest int) {
 		if err != nil {
 			panic(err)
 		}
-		ch := make(chan int,bulkRequest)
+		AuthToken = "ip"
+		ch := make(chan int, bulkRequest)
 		header := http.Header{}
 		header.Set("AuthToken", AuthToken)
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
-	
-		for range bulkRequest{
+
+		for range bulkRequest {
 			go func() {
 				req, err := http.NewRequest("GET", url.String(), nil)
 				if err != nil {
@@ -43,28 +45,31 @@ func test(AuthToken string, bulkRequest int) {
 				defer resp.Body.Close()
 				ch <- resp.StatusCode
 				wg.Done()
+				fmt.Print("test with IP\n")
+				fmt.Printf("User: %s\n", AuthToken)
+				fmt.Printf("Status: %d\n", <-ch)
+				fmt.Print("-----------------\n")
 			}()
 		}
 		wg.Wait()
 		totalTime := time.Since(start)
-		fmt.Printf("User:" + AuthToken + "\n")  
-		fmt.Printf("Time:" + totalTime.String()+ "\n")
-		fmt.Printf("Status:" + fmt.Sprint(ch) + "\n")
-		
+		fmt.Printf("Total time: %s\n", totalTime)
+
+
 	}
 	if AuthToken != "" {
-		url, err := url.Parse("http://localhost:8080/?AuthToken=" + AuthToken)
+		url, err := url.Parse("http://localhost:8080/" + AuthToken)
 		if err != nil {
 			panic(err)
 		}
-		ch := make(chan int,bulkRequest)
+		ch := make(chan int, bulkRequest)
 		header := http.Header{}
 		header.Set("AuthToken", AuthToken)
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
-	
-		for range bulkRequest{
+
+		for range bulkRequest {
 			go func() {
 				req, err := http.NewRequest("GET", url.String(), nil)
 				if err != nil {
@@ -78,16 +83,19 @@ func test(AuthToken string, bulkRequest int) {
 				defer resp.Body.Close()
 				ch <- resp.StatusCode
 				wg.Done()
+				fmt.Print("test with Auth\n")
+				fmt.Printf("User: %s\n", AuthToken)
+				fmt.Printf("Status: %d\n", <-ch)
+				fmt.Print("-----------------\n")
+		
 			}()
 		}
 		wg.Wait()
 		totalTime := time.Since(start)
-		fmt.Printf("User:" + AuthToken + "\n")  
-		fmt.Printf("Time:" + totalTime.String()+ "\n")
-		fmt.Printf("Status:" + fmt.Sprint(ch) + "\n")
+	
+		fmt.Printf("Time: %s\n", totalTime.String())
+		fmt.Print("\n")
 
 	}
-
-
 
 }

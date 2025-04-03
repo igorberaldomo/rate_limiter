@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net"
@@ -12,11 +13,12 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/v5/middleware"
-	"golang.org/x/time/rate"
 
-	"github.com/go-redis/redis"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
+
+var RedisClient DatabaseInterface
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -24,6 +26,13 @@ func main() {
 	if err := godotenv.Load(".env"); err != nil {
 		slog.Error("Env.load", "message", "error loading .env file")
 	}
+	RedisClient = newRedisClient(redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})).(*DBRedis)
+
+	salvarEnvVars()
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -31,24 +40,41 @@ func main() {
 	r.Get("/", perClientLimiter(handler))
 	r.Get("/{API_KEY}", perTokenLimiter(handler))
 
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", r)
 
+}
+
+func salvarEnvVars() {
+	vars := []string{"REQ_MAX_IP", "BLOCK_TIME_IP", "REQ_MAX_AUTH", "BLOCK_TIME_AUTH"}
+	for _, v := range vars {
+		if os.Getenv(v) == "" {
+			slog.Error("salvarEnvVars", "message", "error trying to recover "+v)
+			return
+		} else {
+			t, err := strconv.Atoi(os.Getenv(v))
+			if err != nil {
+				slog.Error("salvarEnvVars", "message", "error trying to converting "+v, "error", err)
+			}
+			RedisClient.Set(v, t, 0)
+		}
+	}
 }
 
 type message struct {
 	Status string `json:"status"`
 	Body   string `json:"body"`
 }
+
 type DatabaseInterface interface {
-	Get(key string) (string, error)
-	Set(key string, value string) error
+	Get(key string) (int, error)
+	Set(key string, value int, time time.Duration) error
+	Update(key string, value int) error
 }
 
 type DBRedis struct {
-	client *redis.Client
-	mu     sync.Mutex
+	Client *redis.Client
+	Mu     sync.Mutex
 }
-
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -62,188 +88,119 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func perClientLimiter(next http.HandlerFunc) http.HandlerFunc {
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	_, err := rdb.Ping().Result()
-	if err != nil {
-
-		slog.Error("perClientLimiter", "message", "error trying to connect to redis", "error", err)
-		return nil
-	}
-	slog.Info("redis.NewClient", "message", "Connected to redis")
-
-	db := newRedisClient(rdb)
-
-	max_ip, err := strconv.Atoi(os.Getenv("REQ_MAX_IP"))
-	if err != nil {
-		slog.Error("perClientLimiter", "message", "error trying to connect to redis", "error", err, "max_ip", max_ip)
-	}
-	db.Set("REQ_MAX_IP", ``+strconv.Itoa(max_ip))
-	block_ip, err := strconv.Atoi(os.Getenv("BLOCK_TIME_IP"))
-	if err != nil {
-		slog.Error("perClientLimiter", "message", "error trying to connect to redis", "error", err, "block_ip", block_ip)
-	}
-	db.Set("BLOCK_TIME_IP", ``+strconv.Itoa(block_ip))
-	type client struct {
-		limiter    *rate.Limiter
-		lastCalled time.Time
-	}
-
-	var (
-		mu      sync.Mutex
-		clients = make(map[string]*client)
-	)
-
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			mu.Lock()
-			block_ip, err := db.Get("BLOCK_TIME_IP")
-			if err != nil {
-				slog.Error("perClientLimiter", "message", "error trying to connect to redis", "error", err)
-			}
-			block_ip_int, _ := strconv.Atoi(block_ip)
-			for ip, c := range clients {
-				if time.Since(c.lastCalled) > time.Duration(block_ip_int)*time.Second {
-					delete(clients, ip)
-				}
-			}
-			mu.Unlock()
-		}
-	}()
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		db := RedisClient.(*DBRedis)
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		mu.Lock()
 		max_ip, err := db.Get("REQ_MAX_IP")
 		if err != nil {
-			slog.Error("perClientLimiter", "message", "error trying to connect to redis","error", err)
+			slog.Error("perClientLimiter2", "message", "error retrieng REQ_MAX_IP", "error", err)
 		}
-		max_ip_int, _ := strconv.Atoi(max_ip)
-		if _, found := clients[ip]; !found {
-			clients[ip] = &client{limiter: rate.NewLimiter(rate.Limit(max_ip_int), 100)}
+		block_time, err := db.Get("BLOCK_TIME_IP")
+		if err != nil {
+			slog.Error("perClientLimiter2", "message", "error retrieng BLOCK_TIME_IP", "error", err)
 		}
-		clients[ip].lastCalled = time.Now()
-		if !clients[ip].limiter.Allow() {
-			mu.Unlock()
-			w.WriteHeader(http.StatusTooManyRequests)
-			message := message{
-				Status: "error",
-				Body:   " you have reached the maximum number of requests or actions allowed within a certain time frame",
+		slog.Info("perClientLimiter", "ip", ip, "max_ip", max_ip, "block_time", block_time)
+		found, err := db.Get(ip)
+		if err != nil {
+			db.Set(ip, 1, time.Second*time.Duration(block_time))
+			next(w, r)
+		} else {
+			if found >= max_ip {
+				w.WriteHeader(http.StatusTooManyRequests)
+				message := message{
+					Status: "error",
+					Body:   " you have reached the maximum number of requests or actions allowed within a certain time frame",
+				}
+				json.NewEncoder(w).Encode(message)
+				return
+			} else {
+				err = db.Update(ip, found+1)
+				if err != nil {
+					slog.Error("perClientLimiter2", "message", "updating access count", "error", err)
+				}
+				next(w, r)
 			}
-			json.NewEncoder(w).Encode(message)
-			return
 		}
-		mu.Unlock()
-		next(w, r)
 	}
 }
 
 func perTokenLimiter(next http.HandlerFunc) http.HandlerFunc {
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-	_, err := rdb.Ping().Result()
-	if err != nil {
-		slog.Error("perTokenLimiter", "message", "error trying to connect to redis", "error", err)
-		return nil
-	}
-	slog.Info("perTokenLimiter", "message", "Connected to redis")
-
-	db := newRedisClient(rdb)
-
-	max_auth, err := strconv.Atoi(os.Getenv("REQ_MAX_AUTH"))
-	if err != nil {
-		slog.Error("perTokenLimiter", "message", "error REQ_MAX_AUTH", "error", err, "max_auth", max_auth)
-	}
-	db.Set("REQ_MAX_AUTH", ``+strconv.Itoa(max_auth))
-
-	block_auth, err := strconv.Atoi(os.Getenv("BLOCK_TIME_AUTH"))
-	if err != nil {
-		slog.Error("perTokenLimiter", "message", "error BLOCK_TIME_AUTH", "error", err, "block_auth", block_auth)
-	}
-	db.Set("BLOCK_TIME_AUTH", ``+strconv.Itoa(block_auth))
-	type token struct {
-		limiter    *rate.Limiter
-		lastCalled time.Time
-	}
-
-	var (
-		mu     sync.Mutex
-		tokens = make(map[string]*token)
-	)
-
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			mu.Lock()
-			block_auth, err := db.Get("BLOCK_TIME_AUTH")
-			if err != nil {
-				slog.Error("perTokenLimiter", "message", "error db.Get BLOCK_TIME_AUTH", "error", err, "block_auth", block_auth)
-			}
-			block_auth_int, _ := strconv.Atoi(block_auth)
-			for auth, c := range tokens {
-				if time.Since(c.lastCalled) > time.Duration(block_auth_int)*time.Second {
-					delete(tokens, auth)
-				}
-			}
-			mu.Unlock()
-		}
-	}()
 	return func(w http.ResponseWriter, r *http.Request) {
 		auth := chi.URLParam(r, "API_KEY")
-
-		mu.Lock()
+		db := RedisClient.(*DBRedis)
 		max_auth, err := db.Get("REQ_MAX_AUTH")
 		if err != nil {
 			slog.Error("perTokenLimiter", "message", "error db.get REQ_MAX_AUTH", "error", err, "nax_auth", max_auth)
 		}
-		max_auth_int, _ := strconv.Atoi(max_auth)
-		if _, found := tokens[auth]; !found {
-			tokens[auth] = &token{limiter: rate.NewLimiter(rate.Limit(max_auth_int), 100)}
+		block_time, err := db.Get("BLOCK_TIME_AUTH")
+		if err != nil {
+			slog.Error("perTokenLimiter", "message", "error retrieng BLOCK_TIME_AUTH", "error", err)
 		}
-		tokens[auth].lastCalled = time.Now()
-		if !tokens[auth].limiter.Allow() {
-			mu.Unlock()
-			w.WriteHeader(http.StatusTooManyRequests)
-			message := message{
-				Status: "error",
-				Body:   " you have reached the maximum number of requests or actions allowed within a certain time frame",
+		found, err := db.Get(auth)
+		if err != nil {
+			err = db.Set(auth, 1, time.Second*time.Duration(block_time))
+			if err != nil {
+				slog.Error("perTokenLimiter", "message", "error db.set", "error", err)
 			}
-			json.NewEncoder(w).Encode(message)
-			return
+			next(w, r)
+		} else {
+			if found >= max_auth {
+				w.WriteHeader(http.StatusTooManyRequests)
+				message := message{
+					Status: "error",
+					Body:   " you have reached the maximum number of requests or actions allowed within a certain time frame",
+				}
+				json.NewEncoder(w).Encode(message)
+				return
+			} else {
+				err = db.Update(auth, found+1)
+				if err != nil {
+					slog.Error("perTokenLimiter", "message", "updating access count", "error", err)
+				}
+				next(w, r)
+			}
 		}
-		mu.Unlock()
-		next(w, r)
 	}
 }
 
 func newRedisClient(client *redis.Client) DatabaseInterface {
 	return &DBRedis{
-		client: client,
+		Client: client,
+		Mu:     sync.Mutex{},
 	}
 }
 
-func (r *DBRedis) Get(key string) (string, error) {
+func (r *DBRedis) Get(key string) (int, error) {
 	// gets a key
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.client.Get(key).Result()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	val, err := r.Client.Get(context.Background(), key).Result()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(val)
 }
 
-func (r *DBRedis) Set(key string, value string) error {
+func (r *DBRedis) Set(key string, value int, time time.Duration) error {
 	// sets a key
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.client.Set(key, value, time.Second*10).Err()
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	return r.Client.Set(context.Background(), key, value, time).Err()
+}
+
+func (r *DBRedis) Update(key string, value int) error {
+	// updates a key
+	r.Mu.Lock()
+	defer r.Mu.Unlock()
+	result, err := r.Client.Set(context.Background(), key, value, redis.KeepTTL).Result()
+	if err != nil {
+		slog.Info("Update", "key", key, "value", value, "result", result, "error", err)
+	}
+	slog.Info("Update", "key", key, "value", value, "result", result)
+	return nil
 }
