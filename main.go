@@ -27,7 +27,7 @@ func main() {
 		slog.Error("Env.load", "message", "error loading .env file")
 	}
 	RedisClient = newRedisClient(redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     "redis:6379",
 		Password: "",
 		DB:       0,
 	})).(*DBRedis)
