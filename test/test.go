@@ -10,15 +10,18 @@ import (
 
 
 func main() {
-	bulkRequest := 10
+	bulkRequest := 11
 
 	test("", bulkRequest)
+	time.Sleep(2 * time.Second)
 	test("token", bulkRequest)
 
 }
 
 func test(AuthToken string, bulkRequest int) {
+	
 	if AuthToken == "" {
+		c := 0
 		url, err := url.Parse("http://localhost:8080")
 		if err != nil {
 			panic(err)
@@ -44,11 +47,11 @@ func test(AuthToken string, bulkRequest int) {
 				}
 				defer resp.Body.Close()
 				ch <- resp.StatusCode
+				c++
 				wg.Done()
-				fmt.Print("test with IP\n")
-				fmt.Printf("User: %s\n", AuthToken)
-				fmt.Printf("Status: %d\n", <-ch)
-				fmt.Print("-----------------\n")
+				if <- ch == http.StatusTooManyRequests {
+					fmt.Printf("request nº %d with ID blockeado\n", c)
+				} 
 			}()
 		}
 		wg.Wait()
@@ -58,6 +61,7 @@ func test(AuthToken string, bulkRequest int) {
 
 	}
 	if AuthToken != "" {
+		c := 0
 		url, err := url.Parse("http://localhost:8080/" + AuthToken)
 		if err != nil {
 			panic(err)
@@ -82,12 +86,12 @@ func test(AuthToken string, bulkRequest int) {
 				}
 				defer resp.Body.Close()
 				ch <- resp.StatusCode
+				c++
+
 				wg.Done()
-				fmt.Print("test with Auth\n")
-				fmt.Printf("User: %s\n", AuthToken)
-				fmt.Printf("Status: %d\n", <-ch)
-				fmt.Print("-----------------\n")
-		
+				if <- ch == http.StatusTooManyRequests {
+					fmt.Printf("request nº %d with token blockeado\n", c)
+				} 
 			}()
 		}
 		wg.Wait()
