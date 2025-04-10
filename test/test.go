@@ -26,10 +26,10 @@ func test(AuthToken string, bulkRequest int) {
 		if err != nil {
 			panic(err)
 		}
-		AuthToken = "ip"
+		name := "ip"
 		ch := make(chan int, bulkRequest)
 		header := http.Header{}
-		header.Set("AuthToken", AuthToken)
+		header.Set("AuthToken", name)
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
@@ -49,6 +49,9 @@ func test(AuthToken string, bulkRequest int) {
 				ch <- resp.StatusCode
 				c++
 				wg.Done()
+				if <- ch == http.StatusOK {
+					fmt.Printf("request nº %d with ID alocado com sucesso\n", c)
+				}
 				if <- ch == http.StatusTooManyRequests {
 					fmt.Printf("request nº %d with ID blockeado\n", c)
 				} 
@@ -89,6 +92,9 @@ func test(AuthToken string, bulkRequest int) {
 				c++
 
 				wg.Done()
+				if <- ch == http.StatusOK {
+					fmt.Printf("request nº %d with token alocado com sucesso\n", c)
+				}
 				if <- ch == http.StatusTooManyRequests {
 					fmt.Printf("request nº %d with token blockeado\n", c)
 				} 
