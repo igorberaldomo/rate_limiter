@@ -10,7 +10,7 @@ import (
 
 
 func main() {
-	bulkRequest := 11
+	bulkRequest := 15
 
 	test("", bulkRequest)
 	time.Sleep(2 * time.Second)
@@ -36,6 +36,7 @@ func test(AuthToken string, bulkRequest int) {
 
 		for range bulkRequest {
 			go func() {
+
 				req, err := http.NewRequest("GET", url.String(), nil)
 				if err != nil {
 					panic(err)
