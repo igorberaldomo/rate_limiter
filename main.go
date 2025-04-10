@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -149,6 +150,7 @@ func perTokenLimiter(next http.HandlerFunc) http.HandlerFunc {
 			}
 			next(w, r)
 		} else {
+
 			if found >= max_auth {
 				w.WriteHeader(http.StatusTooManyRequests)
 				message := message{
