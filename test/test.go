@@ -21,7 +21,7 @@ func main() {
 func test(AuthToken string, bulkRequest int) {
 	
 	if AuthToken == "" {
-		c := 0
+
 		url, err := url.Parse("http://localhost:8080")
 		if err != nil {
 			panic(err)
@@ -33,7 +33,7 @@ func test(AuthToken string, bulkRequest int) {
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
-
+		c := 0
 		for range bulkRequest {
 			go func() {
 
@@ -65,7 +65,7 @@ func test(AuthToken string, bulkRequest int) {
 
 	}
 	if AuthToken != "" {
-		c := 0
+
 		url, err := url.Parse("http://localhost:8080/" + AuthToken)
 		if err != nil {
 			panic(err)
@@ -76,7 +76,7 @@ func test(AuthToken string, bulkRequest int) {
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
-
+		c := 0
 		for range bulkRequest {
 			go func() {
 				req, err := http.NewRequest("GET", url.String(), nil)
