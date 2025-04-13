@@ -26,10 +26,9 @@ func test(AuthToken string, bulkRequest int) {
 		if err != nil {
 			panic(err)
 		}
-		name := "ip"
 		ch := make(chan int, bulkRequest)
 		header := http.Header{}
-		header.Set("AuthToken", name)
+		header.Set("AuthToken", "ip")
 		var wg sync.WaitGroup
 		wg.Add(bulkRequest)
 		start := time.Now()
