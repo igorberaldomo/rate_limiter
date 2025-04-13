@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 )
 
@@ -19,49 +18,36 @@ func main() {
 }
 
 func test(AuthToken string, bulkRequest int) {
-	
 	if AuthToken == "" {
-
 		url, err := url.Parse("http://localhost:8080")
 		if err != nil {
 			panic(err)
 		}
-		ch := make(chan int, bulkRequest)
 		header := http.Header{}
 		header.Set("AuthToken", "ip")
-		var wg sync.WaitGroup
-		wg.Add(bulkRequest)
 		start := time.Now()
-		c := 0
-		for range bulkRequest {
-			go func() {
+		for i := 0; i < bulkRequest; i++ {
+			req, err := http.NewRequest("GET", url.String(), nil)
+			if err != nil {
+				panic(err)
+			}
+			req.Header = header
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
 
-				req, err := http.NewRequest("GET", url.String(), nil)
-				if err != nil {
-					panic(err)
-				}
-				req.Header = header
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					panic(err)
-				}
-				defer resp.Body.Close()
-				ch <- resp.StatusCode
-				c++
-				wg.Done()
-				if <- ch == http.StatusOK {
-					fmt.Printf("request nº %d with ID alocado com sucesso\n", c)
-				}
-				if <- ch == http.StatusTooManyRequests {
-					fmt.Printf("request nº %d with ID blockeado\n", c)
-				} 
-			}()
+			result := resp.StatusCode
+			if result == http.StatusOK {
+				fmt.Printf("request nº %d with ID alocado com sucesso\n", i+1)
+			}
+			if result == http.StatusTooManyRequests {
+				fmt.Printf("request nº %d with ID blockeado\n", i+1)
+			} 
 		}
-		wg.Wait()
 		totalTime := time.Since(start)
 		fmt.Printf("Total time: %s\n", totalTime)
-
-
 	}
 	if AuthToken != "" {
 
@@ -69,15 +55,10 @@ func test(AuthToken string, bulkRequest int) {
 		if err != nil {
 			panic(err)
 		}
-		ch := make(chan int, bulkRequest)
 		header := http.Header{}
 		header.Set("AuthToken", AuthToken)
-		var wg sync.WaitGroup
-		wg.Add(bulkRequest)
 		start := time.Now()
-		c := 0
-		for range bulkRequest {
-			go func() {
+		for i := 0; i < bulkRequest; i++ {
 				req, err := http.NewRequest("GET", url.String(), nil)
 				if err != nil {
 					panic(err)
@@ -88,19 +69,16 @@ func test(AuthToken string, bulkRequest int) {
 					panic(err)
 				}
 				defer resp.Body.Close()
-				ch <- resp.StatusCode
-				c++
 
-				wg.Done()
-				if <- ch == http.StatusOK {
-					fmt.Printf("request nº %d with token alocado com sucesso\n", c)
+				result := resp.StatusCode
+				
+				if result == http.StatusOK {
+					fmt.Printf("request nº %d with token alocado com sucesso\n", i+1)
 				}
-				if <- ch == http.StatusTooManyRequests {
-					fmt.Printf("request nº %d with token blockeado\n", c)
+				if result == http.StatusTooManyRequests {
+					fmt.Printf("request nº %d with token blockeado\n", i+1)
 				} 
-			}()
 		}
-		wg.Wait()
 		totalTime := time.Since(start)
 	
 		fmt.Printf("Time: %s\n", totalTime.String())
