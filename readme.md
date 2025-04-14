@@ -8,6 +8,7 @@ Objetivo: Desenvolver um rate limiter em Go que possa ser configurado para limit
         isso vai alocar 10 requests a cada 10 segundos depois disso vai bloquear o acesso
 
     para subir o código levante o docker composer
+        docker-compose -f 'docker-compose.yaml' up -d --build 
     para mudar os valores de qualquer variavel modifique o .env
     todos os requests são gravados de forma temporária no redis
     para fazer requisições em massa utilize go run test/test.go
